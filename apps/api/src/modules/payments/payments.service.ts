@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentStatus, Payment, Prisma } from '@prisma/client';
-import { EventsGateway } from '../events/events/events.gateway';
+import { EventsService } from '../events/events/events.service';
 import { QuotesService } from '../quotes/quotes.service';
 import { WebhooksService } from '../webhooks/webhooks.service';
 import { StellarService } from '../stellar/stellar.service';
@@ -25,7 +25,7 @@ export class PaymentsService implements OnModuleInit {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly eventsGateway: EventsGateway,
+    private readonly eventsService: EventsService,
     private readonly quotesService: QuotesService,
     private readonly webhooksService: WebhooksService,
     private readonly stellarService: StellarService,
@@ -74,10 +74,16 @@ export class PaymentsService implements OnModuleInit {
       },
     });
 
-    if (this.eventsGateway.server) {
-      this.eventsGateway.server
-        .to(payment.id)
-        .emit('payment.updated', updatedPayment);
+    if (this.eventsService) {
+      this.eventsService.emitPaymentStatus(
+        payment.id,
+        payment.merchantId,
+        PaymentStatus.SOURCE_LOCKED,
+        {
+          sourceTxHash: event.txHash,
+          updatedAt: new Date(),
+        },
+      );
     }
 
     return updatedPayment;
@@ -101,8 +107,20 @@ export class PaymentsService implements OnModuleInit {
       },
     });
 
-    if (this.eventsGateway.server) {
-      this.eventsGateway.server.to(id).emit('payment.updated', updatedPayment);
+    if (this.eventsService) {
+      this.eventsService.emitPaymentStatus(
+        id,
+        updatedPayment.merchantId,
+        status,
+        {
+          sourceTxHash: updatedPayment.sourceTxHash || undefined,
+          stellarTxHash: updatedPayment.stellarTxHash || undefined,
+          destTxHash: updatedPayment.destTxHash || undefined,
+          destAmount: updatedPayment.destAmount?.toString(),
+          destAsset: updatedPayment.destAsset,
+          updatedAt: updatedPayment.updatedAt,
+        },
+      );
     }
 
     // Dispatch webhook for status change
